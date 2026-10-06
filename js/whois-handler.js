@@ -10,30 +10,20 @@ class WhoisHandler {
     async handleLookup(domain = null) {
         // Get domain from parameter or from input (for backward compatibility)
         const targetDomain = domain || (this.elements.whoisDomainInput ? this.elements.whoisDomainInput.value.trim() : '');
-        
-        console.log('=== WHOIS Handler Called ===');
-        console.log('Target domain:', targetDomain);
-        console.log('Elements available:', {
-            whoisContainer: !!this.elements.whoisContainer,
-            rightPanel: !!this.elements.rightPanel
-        });
-        
+
         if (!targetDomain) {
             this.showError('Vui lòng nhập tên miền');
             return;
         }
 
         if (this.isLoading) {
-            console.log('WHOIS lookup already in progress');
+            
             return;
         }
 
-        console.log('=== WHOIS Lookup Started ===');
-        console.log('Domain:', targetDomain);
-
         // No need to show right panel - it's already shown
         // Just update the container with loading state
-        console.log('Setting loading state...');
+        
         this.elements.whoisContainer.innerHTML = '<div class="whois-loading">🔍 Đang tra cứu thông tin WHOIS...</div>';
         
         // Set loading state
@@ -42,17 +32,13 @@ class WhoisHandler {
         try {
             // Clean domain name (remove http/https, www, etc.)
             const cleanDomain = this.cleanDomainName(targetDomain);
-            console.log('Clean domain:', cleanDomain);
-            
+
             // Call background script for WHOIS
-            console.log('Sending message to background script...');
+            
             const response = await this.sendMessage({ action: 'whoisLookup', domain: cleanDomain });
-            
-            console.log('=== WHOIS Response Received ===');
-            console.log('Response:', response);
-            
+
             if (response && response.success) {
-                console.log('WHOIS success, displaying data...');
+                
                 this.displayWhoisData(response.data, response.warning, response.source);
             } else {
                 console.error('WHOIS API error:', response);

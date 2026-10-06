@@ -10,34 +10,22 @@ class DnsRecordsHandler {
     async handleLookup(domain = null) {
         // Get domain from parameter or from input
         const targetDomain = domain || (this.elements.dnsDomainInput ? this.elements.dnsDomainInput.value.trim() : '');
-        
-        console.log('=== DNS Records Handler Called ===');
-        console.log('Target domain:', targetDomain);
-        console.log('Elements available:', {
-            dnsContainer: !!this.elements.dnsContainer,
-            rightPanel: !!this.elements.rightPanel,
-            recordTypeSelect: !!this.elements.recordTypeSelect
-        });
-        
+
         if (!targetDomain) {
             this.showError('Vui lòng nhập tên miền');
             return;
         }
 
         if (this.isLoading) {
-            console.log('DNS lookup already in progress');
+            
             return;
         }
 
-        console.log('=== DNS Records Lookup Started ===');
-        console.log('Domain:', targetDomain);
-
         // Get selected record type
         const recordType = this.elements.recordTypeSelect ? this.elements.recordTypeSelect.value : 'A';
-        console.log('Record type:', recordType);
 
         // Show loading state in container
-        console.log('Setting loading state...');
+        
         this.elements.dnsContainer.innerHTML = '<div class="dns-loading">🔍 Đang tra cứu DNS records...</div>';
         
         // Set loading state
@@ -46,14 +34,11 @@ class DnsRecordsHandler {
         try {
             // Clean domain name
             const cleanDomain = this.cleanDomainName(targetDomain);
-            console.log('Clean domain:', cleanDomain);
-            
+
             // Lookup DNS records using Google DNS API
-            console.log('Calling Google DNS API...');
+            
             const dnsData = await this.lookupDnsRecords(cleanDomain, recordType);
-            
-            console.log('DNS API response:', dnsData);
-            
+
             // Display results
             this.displayDnsResults(dnsData, cleanDomain, recordType);
             
@@ -67,10 +52,8 @@ class DnsRecordsHandler {
 
     async lookupDnsRecords(domain, recordType) {
         const apiUrl = `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${recordType}`;
-        
-        console.log('DNS API URL:', apiUrl);
-        
-        const response = await fetch(apiUrl, {
+
+        const response = await boundedFetch(apiUrl, {
             method: 'GET',
             headers: {
                 'Accept': 'application/json'
@@ -86,8 +69,7 @@ class DnsRecordsHandler {
     }
 
     displayDnsResults(data, domain, recordType) {
-        console.log('Displaying DNS results for:', domain, recordType, data);
-        
+
         let html = `
             <div class="dns-results">
                 <div class="dns-header">

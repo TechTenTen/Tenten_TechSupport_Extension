@@ -1,3 +1,68 @@
+# TENTEN DNS Manager — v2.3.0
+
+Bản nâng cấp thêm Webcake và import DNS tùy chỉnh, đồng thời giảm hoạt động trên các tab không liên quan.
+
+## Nạp / cập nhật extension
+
+1. Mở `chrome://extensions` (Chrome/Edge Chromium 103 trở lên).
+2. Bật Developer mode, chọn **Load unpacked** và chọn thư mục này. Nếu đã nạp trước đó, bấm **Reload** trên extension.
+3. **Làm mới các tab đang mở** để content script cũ và widget tự động cũ được gỡ khỏi trang.
+4. Mở DNS Settings của đúng tên miền tại `https://domain.tenten.vn`, rồi mở extension.
+
+## Webcake
+
+Chọn **Auto Webcake DNS**, kiểm tra các bản ghi rồi bấm **Import vào TENTEN**:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| A | @ | 113.20.119.17 |
+| CNAME | www | dns.webcake.io |
+
+Import tác động đến tên miền **đang được chọn trên trang DNS Settings**. Không nhập tên miền mới để chuyển zone. Engine dùng cùng endpoint và các trường form như code cũ: `/ApiDnsSetting/addDns/` và `dev_token_csrf` trong trang.
+
+## Bản ghi tùy chỉnh
+
+Chọn **Custom Records** hoặc sửa trực tiếp mẫu Webcake/Ladipage. Thêm/xóa dòng, điền Type/Name/Value và bấm **Lưu mẫu**. Mẫu được lưu trong `chrome.storage.local`; chọn Tùy chỉnh để dùng lại. **Xuất JSON** để sao lưu hoặc **Nhập JSON** để đọc cấu hình; nhập file chỉ nạp danh sách để xem trước, chưa tạo DNS và chưa lưu mẫu.
+
+Hỗ trợ A, AAAA, CNAME, MX, TXT, NS, SRV, CAA, REDIRECT. MX có `priority`; SRV có `priority`, `weight`, `port`; CAA có `flag`, `tag` (issue/issuewild/iodef). TTL dùng mặc định của TENTEN theo form cũ. Tối đa 50 bản ghi/lượt, file JSON tối đa 64 KB.
+
+```json
+{
+  "version": 1,
+  "records": [
+    { "type": "A", "name": "@", "value": "113.20.119.17" },
+    { "type": "CNAME", "name": "www", "value": "dns.webcake.io" }
+  ]
+}
+```
+
+Ladipage vẫn có mẫu tên miền chính (CNAME www + REDIRECT @) và tên miền phụ. Ô tên miền chỉ dùng điền giá trị redirect hoặc Name, không thay đổi zone TENTEN. Với subdomain nhiều cấp hoặc zone riêng, sửa Name theo zone đang mở.
+
+## Giảm tài nguyên và xử lý lỗi
+
+- Widget IP không còn tự chạy trên mọi website. Bấm **Mở widget IP trên tab** khi cần; đóng widget sẽ hủy HEAD request, gỡ DOM và listener của widget.
+- Widget tra DNS/geolocation qua service worker, dùng cache 5 phút (tối đa 100 domain) và gộp yêu cầu trùng đang chạy. Chỉ dùng một dịch vụ geolocation HTTPS. HEAD lấy Server chỉ chạy khi mở/làm mới.
+- Content script DNS chỉ chạy trên TENTEN, có bảo vệ chống inject lặp, không polling, không MutationObserver, không gọi mạng khi chờ.
+- DNS import gửi **tuần tự**, tối đa 15 giây/yêu cầu. Tra cứu dùng timeout 12 giây. Không tự thử lại POST.
+- Dừng/lỗi sẽ ngừng các bản ghi tiếp theo. API phải có cờ thành công được nhận diện (`success`, `status`, hoặc `result` là true/1/success/ok); HTTP lỗi, lỗi JSON và trạng thái chưa rõ đều dừng và báo số bản ghi đã xác nhận.
+- Có thể đóng popup rồi mở lại phần Import để xem trạng thái trên tab. Điều hướng/tải lại tab sẽ làm mất trạng thái này.
+- Nhật ký giới hạn 100 dòng; bỏ log debug dày đặc và sửa listener giữ kênh trả lời cho message không được xử lý.
+- Sửa popup tham chiếu CSS không tồn tại và giảm chiều rộng mở rộng về 780px.
+
+Đây là công cụ **thêm** bản ghi. Không tự xóa/sửa bản ghi có sẵn, chưa tự dò bản ghi đã tồn tại trên server. Kiểm tra DNS Settings trước khi import lại, nhất là sau timeout/hủy: máy chủ có thể đã xử lý yêu cầu cuối cùng. Bản ghi đã thêm không tự hoàn tác. Không báo "DNS đã trỏ thành công" chỉ dựa trên HTTP; DNS propagation cần kiểm tra riêng.
+
+## Kiểm thử và giới hạn xác minh
+
+Chạy `npm test` (Node.js 18+), hoặc `node tests/dns.test.js` để xem từng tình huống. Kiểm thử dùng API giả lập, không gửi POST thật. Bao gồm validation, encode form Webcake/MX/SRV/CAA, import tuần tự, chống chạy trùng/inject trùng, kết quả sau đóng popup, lỗi giữa chừng, dừng, timeout, thiếu token và tài nguyên manifest/popup.
+
+Chưa xác minh trên một phiên TENTEN đã đăng nhập hoặc đo CPU/RAM trước-sau trên máy người dùng. Cấu trúc phản hồi thực của API có thể cần điều chỉnh bộ đọc trạng thái; khi không nhận diện được, công cụ dừng và yêu cầu kiểm tra DNS Settings để tránh tạo lặp. Không lưu CSRF token trong cấu hình hoặc nhật ký.
+
+Tài liệu Chrome: [Content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts), [Cross-origin network requests](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests).
+
+---
+
+## Tài liệu bản cũ (tham khảo)
+
 ﻿#  Runsystem Tenten DNS Automation Extension
 
 [![Version](https://img.shields.io/badge/Version-2.3.0-blue)](https://github.com/runsystem/tenten-dns-automation)

@@ -1,384 +1,214 @@
-// Ladipage DNS Handler - Handles auto DNS creation for Ladipage
+// Shared popup controller for Webcake, Ladipage, and editable DNS imports.
 class LadipageHandler {
     constructor(elements) {
         this.elements = elements;
         this.currentTabId = null;
-        this.isAutomationRunning = false;
-        
-        // Setup event listeners
-        this.setupEventListeners();
-        
-        console.log('✓ LadipageHandler initialized');
-    }
-    
-    setupEventListeners() {
-        // Handle panel open
-        if (this.elements.autoLadipage) {
-            this.elements.autoLadipage.addEventListener('click', () => {
-                console.log('Auto Ladipage clicked');
-                this.handlePanelOpen();
-            });
-        }
-        
-        // Handle submit button
-        if (this.elements.ladipageSubmitBtn) {
-            this.elements.ladipageSubmitBtn.addEventListener('click', () => {
-                this.handleLadipageAutomation();
-            });
-        }
-        
-        // Handle stop button
-        if (this.elements.ladipageStopBtn) {
-            this.elements.ladipageStopBtn.addEventListener('click', () => {
-                this.stopAutomation();
-            });
-        }
-        
-        // Handle Enter key in domain input
-        if (this.elements.ladipageDomainInput) {
-            this.elements.ladipageDomainInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    this.handleLadipageAutomation();
-                }
-            });
-        }
-    }
-    
-    handlePanelOpen() {
-        console.log('Opening Ladipage panel...');
-        
-        // Use UIManager to show right panel
-        if (window.uiManager) {
-            window.uiManager.showRightPanel('🚀 Auto Ladipage DNS', 'ladipage');
-        } else {
-            // Fallback if UIManager not available
-            this.showPanelManually();
-        }
-        
-        // Clear previous input and results
-        if (this.elements.ladipageDomainInput) {
-            this.elements.ladipageDomainInput.value = '';
-        }
-        if (this.elements.ladipageContainer) {
-            this.elements.ladipageContainer.innerHTML = '<div class="initial-message">📝 Nhập tên miền ở trên và nhấn "Tạo DNS" để bắt đầu automation</div>';
-        }
-        
-        // Focus on domain input
-        setTimeout(() => {
-            if (this.elements.ladipageDomainInput) {
-                this.elements.ladipageDomainInput.focus();
-            }
-        }, 100);
-        
-        console.log('✓ Ladipage panel opened');
-    }
-    
-    showPanelManually() {
-        // Fallback panel management
-        const sections = ['whoisSection', 'ipInfoSection', 'dnsSection', 'ladipageSection'];
-        sections.forEach(sectionId => {
-            const section = document.getElementById(sectionId);
-            if (section) {
-                section.style.display = 'none';
-            }
+        this.jobId = null;
+        this.revision = -1;
+        this.busy = false;
+        this.savedRecords = DnsConfig.webcake();
+        this.profile = document.getElementById('dnsPreset');
+        this.editor = document.getElementById('dnsRecordEditor');
+        this.ready = this.loadSettings();
+        elements.autoLadipage.addEventListener('click', () => this.open('ladipage'));
+        document.getElementById('autoWebcake').addEventListener('click', () => this.open('webcake'));
+        document.getElementById('customRecords').addEventListener('click', () => this.open('custom'));
+        this.profile.addEventListener('change', () => this.setPreset(this.profile.value));
+        elements.ladipageDomainInput.addEventListener('change', () => {
+            if (this.profile.value.startsWith('ladipage')) this.setPreset(this.profile.value);
         });
-        
-        // Show ladipage section
-        if (this.elements.ladipageSection) {
-            this.elements.ladipageSection.style.display = 'block';
-        }
-        
-        // Show right panel
-        if (this.elements.rightPanel) {
-            this.elements.rightPanel.style.display = 'block';
-            this.elements.body.classList.add('expanded');
-        }
-        
-        // Update title
-        if (this.elements.rightPanelTitle) {
-            this.elements.rightPanelTitle.textContent = '🚀 Auto Ladipage DNS';
-        }
+        document.getElementById('addDnsRow').addEventListener('click', () => {
+            if (this.editor.children.length >= DnsConfig.MAX_RECORDS) return this.addLog('Tối đa 50 bản ghi', 'error');
+            this.addRow({ type: 'A', name: '@', value: '' });
+        });
+        document.getElementById('saveDnsTemplate').addEventListener('click', () => this.saveTemplate());
+        document.getElementById('exportDnsTemplate').addEventListener('click', () => this.exportTemplate());
+        document.getElementById('importDnsFile').addEventListener('change', event => this.importTemplate(event));
+        elements.ladipageSubmitBtn.addEventListener('click', () => this.start());
+        elements.ladipageStopBtn.addEventListener('click', () => this.stop());
     }
-    
-    async handleLadipageAutomation() {
-        const domain = this.elements.ladipageDomainInput.value.trim();
-        
-        if (!domain) {
-            this.showError('Vui lòng nhập tên miền');
-            return;
-        }
-        
-        // Validate domain
-        if (!this.isValidDomain(domain)) {
-            this.showError('Tên miền không hợp lệ');
-            return;
-        }
-        
-        // Get ladipage type
-        const ladipageType = document.querySelector('input[name="ladipageType"]:checked')?.value || 'domain';
-        
+    async loadSettings() {
         try {
-            // Check if already running
-            if (this.isAutomationRunning) {
-                this.showError('Automation đang chạy');
-                return;
-            }
-            
-            // Check current tab instead of opening new tab
-            this.addLog('� Kiểm tra tab hiện tại...', 'info');
-            
+            const { customDnsRecords, dnsImportDomain } = await chrome.storage.local.get(['customDnsRecords', 'dnsImportDomain']);
+            if (customDnsRecords) this.savedRecords = DnsConfig.validateRecords(customDnsRecords);
+            if (dnsImportDomain) this.elements.ladipageDomainInput.value = dnsImportDomain;
+        } catch (error) { this.addLog(`Không đọc được mẫu đã lưu: ${error.message}`, 'warning'); }
+        this.setPreset('webcake');
+    }
+    async open(preset) {
+        await this.ready;
+        window.uiManager.showRightPanel('🚀 Import bản ghi DNS', 'ladipage');
+        if (!this.busy) this.setPreset(preset);
+        try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            
-            if (!tab.url || !tab.url.includes('domain.tenten.vn')) {
-                this.showError('Vui lòng truy cập trang domain.tenten.vn trước khi sử dụng automation');
-                this.addLog('💡 Hướng dẫn: Mở tab domain.tenten.vn và truy cập vào DNS Settings của domain', 'warning');
-                return;
+            if (tab && new URL(tab.url).origin === 'https://domain.tenten.vn') {
+                this.currentTabId = tab.id;
+                const state = await this.send({ action: 'getAutomationState' });
+                if (state.jobId) this.restore(state);
             }
-            
+        } catch (_) { /* A tab opened before reloading the extension may not have the runner yet. */ }
+    }
+    setPreset(preset) {
+        this.profile.value = preset;
+        document.getElementById('ladipageDomainSettings').hidden = !preset.startsWith('ladipage');
+        let records = preset === 'custom' ? this.savedRecords : DnsConfig.webcake();
+        const domain = this.elements.ladipageDomainInput.value.trim().toLowerCase();
+        if (preset === 'ladipage') records = [
+            { type: 'CNAME', name: 'www', value: 'dns.ladipage.com' },
+            { type: 'REDIRECT', name: '@', value: domain ? `http://www.${domain}/` : '' }
+        ];
+        if (preset === 'ladipage-sub') records = [{ type: 'CNAME', name: domain.split('.')[0] || 'sub', value: 'dns.ladipage.com' }];
+        this.render(records);
+    }
+    render(records) {
+        this.editor.replaceChildren();
+        records.forEach(record => this.addRow(record));
+    }
+    addRow(record) {
+        const row = document.createElement('div');
+        row.className = 'dns-edit-row';
+        // Markup is fixed; values from imported files are only assigned as DOM properties.
+        row.innerHTML = `<div class="dns-row-top"><select data-field="type" aria-label="Type"></select><input data-field="name" aria-label="Name" placeholder="@ hoặc www"><button type="button" class="remove-record" aria-label="Xóa bản ghi">×</button></div>
+            <input data-field="value" aria-label="Value" placeholder="Value">
+            <div class="dns-extra-fields"></div>`;
+        const type = row.querySelector('select');
+        DnsConfig.TYPES.forEach(value => type.add(new Option(value, value)));
+        type.value = record.type;
+        row.querySelector('[data-field="name"]').value = record.name;
+        row.querySelector('[data-field="value"]').value = record.value;
+        const extras = () => {
+            const container = row.querySelector('.dns-extra-fields');
+            container.replaceChildren();
+            const fields = type.value === 'MX' ? ['priority'] : type.value === 'SRV' ? ['priority', 'weight', 'port'] : type.value === 'CAA' ? ['flag', 'tag'] : [];
+            fields.forEach(field => {
+                const label = document.createElement('label');
+                label.textContent = field;
+                const input = document.createElement('input');
+                input.dataset.field = field;
+                input.setAttribute('aria-label', field);
+                input.value = record[field] ?? (field === 'tag' ? 'issue' : '0');
+                if (field !== 'tag') { input.type = 'number'; input.min = '0'; input.max = field === 'flag' ? '255' : '65535'; }
+                label.append(input);
+                container.append(label);
+            });
+        };
+        type.addEventListener('change', extras);
+        row.querySelector('button').addEventListener('click', () => row.remove());
+        extras();
+        this.editor.append(row);
+    }
+    readRecords() {
+        return DnsConfig.validateRecords([...this.editor.children].map(row => Object.fromEntries(
+            [...row.querySelectorAll('[data-field]')].map(input => [input.dataset.field, input.value])
+        )));
+    }
+    async saveTemplate() {
+        try {
+            const records = this.readRecords();
+            await chrome.storage.local.set({ customDnsRecords: records });
+            this.savedRecords = records;
+            this.addLog('Đã lưu mẫu. Chọn Tùy chỉnh để dùng lại.', 'success');
+        } catch (error) { this.addLog(error.message, 'error'); }
+    }
+    exportTemplate() {
+        try {
+            const records = this.readRecords();
+            const url = URL.createObjectURL(new Blob([JSON.stringify({ version: 1, records }, null, 2)], { type: 'application/json' }));
+            const link = document.createElement('a');
+            link.href = url; link.download = 'tenten-dns-template.json'; link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) { this.addLog(error.message, 'error'); }
+    }
+    async importTemplate(event) {
+        try {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (file.size > 65536) throw new Error('File JSON tối đa 64 KB');
+            const data = JSON.parse(await file.text());
+            const records = DnsConfig.validateRecords(Array.isArray(data) ? data : data.records);
+            this.profile.value = 'custom';
+            document.getElementById('ladipageDomainSettings').hidden = true;
+            this.render(records);
+            this.addLog('Đã đọc cấu hình. Kiểm tra danh sách rồi bấm Lưu mẫu hoặc Import vào TENTEN.', 'info');
+        } catch (error) { this.addLog(error.message, 'error'); }
+        finally { event.target.value = ''; }
+    }
+    async start() {
+        if (this.busy) return;
+        this.setBusy(true);
+        try {
+            const records = this.readRecords();
+            const preset = this.profile.value;
+            const domain = this.elements.ladipageDomainInput.value.trim().toLowerCase();
+            if (preset.startsWith('ladipage') && (!DnsConfig.hostname(domain) || !domain.includes('.'))) throw new Error('Nhập tên miền Ladipage hợp lệ');
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab || new URL(tab.url).origin !== 'https://domain.tenten.vn') throw new Error('Mở DNS Settings của tên miền cần cấu hình trên domain.tenten.vn');
             this.currentTabId = tab.id;
-            this.addLog('✅ Đã kết nối với tab domain.tenten.vn', 'success');
-            
-            // Show progress
-            this.showProgress();
-            
-            // Clear previous logs
-            this.clearLogs();
-            this.addLog('🚀 Bắt đầu DNS Automation Ladipage...', 'info');
-            
-            // Check if content script is ready
-            this.addLog('📋 Kiểm tra automation script...', 'info');
-            
-            try {
-                const pingResponse = await this.sendMessageToTab(tab.id, { action: 'ping' });
-                
-                if (!pingResponse || pingResponse.status !== 'ready') {
-                    this.addLog('❌ Content script chưa sẵn sàng, đang inject...', 'warning');
-                    await this.injectContentScript(tab.id);
-                    // Wait for content script to be ready
-                    await this.delay(1000);
-                } else {
-                    this.addLog('✅ Content script đã sẵn sàng', 'success');
-                }
-                
-                // Start automation
-                await this.startAutomation(domain, ladipageType, tab.id);
-                
-            } catch (error) {
-                if (error.message.includes('Could not establish connection')) {
-                    this.addLog('❌ Content script chưa sẵn sàng, đang inject...', 'warning');
-                    await this.injectContentScript(tab.id);
-                    await this.delay(1000);
-                    await this.startAutomation(domain, ladipageType, tab.id);
-                } else {
-                    throw error;
-                }
+            try { await this.send({ action: 'ping' }); }
+            catch (_) {
+                await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['js/dns-config.js', 'content.js'] });
+                await this.send({ action: 'ping' });
             }
-            
-        } catch (error) {
-            this.showError('Lỗi khi tạo DNS Ladipage: ' + error.message);
-            this.resetUI();
-        }
+            // Read state before starting to prevent competing popup sessions.
+            const previous = await this.send({ action: 'getAutomationState' });
+            if (previous.running) { this.restore(previous); return; }
+            await chrome.storage.local.set({ dnsImportDomain: domain });
+            this.jobId = crypto.randomUUID();
+            this.revision = -1;
+            this.elements.ladipageContainer.replaceChildren();
+            const response = await this.send({ action: 'importDnsRecords', jobId: this.jobId, records });
+            if (!response?.accepted) {
+                if (response?.state?.running) { this.restore(response.state); return; }
+                throw new Error(response?.error || 'Không nhận được xác nhận từ tab');
+            }
+            // Fetch the latest state: even a fast run may finish before the acceptance callback.
+            this.restore(await this.send({ action: 'getAutomationState' }));
+        } catch (error) { this.addLog(error.message, 'error'); this.setBusy(false); this.updateProgress(0, error.message); }
     }
-    
-    async injectContentScript(tabId) {
-        this.addLog('📋 Đang inject automation script...', 'info');
-        
+    async stop() {
         try {
-            // First check if content script is already injected
-            const pingResponse = await this.sendMessageToTab(tabId, { action: 'ping' });
-            if (pingResponse && pingResponse.status === 'ready') {
-                this.addLog('✅ Content script đã sẵn sàng', 'success');
-                return;
-            }
-        } catch (error) {
-            // Content script not ready, need to inject
-            this.addLog('📋 Content script chưa sẵn sàng, đang inject...', 'info');
-        }
-        
-        return new Promise((resolve, reject) => {
-            chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                files: ['content.js']
-            }, (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error('Không thể inject script: ' + chrome.runtime.lastError.message));
-                } else {
-                    this.addLog('✅ Script đã được inject thành công', 'success');
-                    resolve();
-                }
-            });
-        });
+            const state = await this.send({ action: 'stopAutomation', jobId: this.jobId });
+            this.addLog('Đã gửi lệnh dừng; đang chờ yêu cầu hiện tại kết thúc.', 'warning');
+            this.restore(state);
+        } catch (error) { this.addLog(error.message, 'error'); }
     }
-    
-    async startAutomation(domain, ladipageType, tabId) {
-        this.isAutomationRunning = true;
-        
-        try {
-            // Wait a bit for content script to be ready
-            await this.delay(1000);
-            
-            // Check if content script is ready
-            const pingResponse = await this.sendMessageToTab(tabId, { action: 'ping' });
-            
-            if (!pingResponse || pingResponse.status !== 'ready') {
-                throw new Error('Content script không sẵn sàng');
-            }
-            
-            this.addLog('✅ Kết nối với automation script thành công', 'success');
-            
-            // Determine automation type
-            const action = ladipageType === 'subdomain' ? 'startDnsAutomationSub' : 'startDnsAutomation';
-            const domainKey = ladipageType === 'subdomain' ? 'subdomain' : 'domain';
-            
-            // Start automation
-            const response = await this.sendMessageToTab(tabId, {
-                action: action,
-                [domainKey]: domain
-            });
-            
-            if (response && response.success) {
-                this.addLog('✅ Automation đã bắt đầu thành công', 'success');
-            } else {
-                throw new Error('Không thể bắt đầu automation: ' + JSON.stringify(response));
-            }
-            
-        } catch (error) {
-            this.isAutomationRunning = false;
-            throw error;
-        }
+    send(message) { return chrome.tabs.sendMessage(this.currentTabId, message); }
+    restore(state) {
+        if (state.jobId === this.jobId && state.revision < this.revision) return;
+        this.revision = state.revision;
+        this.jobId = state.jobId;
+        this.setBusy(state.running);
+        this.elements.ladipageContainer.replaceChildren();
+        state.logs.forEach(entry => this.addLog(entry.message, entry.type));
+        this.updateProgress(state.percent, state.message);
     }
-    
-    async sendMessageToTab(tabId, message) {
-        return new Promise((resolve, reject) => {
-            chrome.tabs.sendMessage(tabId, message, (response) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else {
-                    resolve(response);
-                }
-            });
-        });
+    setBusy(busy) {
+        this.busy = busy;
+        document.getElementById('dnsImportSettings').disabled = busy;
+        this.elements.ladipageSubmitBtn.disabled = busy;
+        this.elements.ladipageSubmitBtn.textContent = busy ? 'Đang import...' : 'Import vào TENTEN';
+        this.elements.ladipageStopBtn.disabled = !busy;
+        this.elements.ladipageProgress.style.display = 'block';
     }
-    
-    stopAutomation() {
-        if (this.currentTabId && this.isAutomationRunning) {
-            this.addLog('🛑 Đang dừng automation...', 'warning');
-            
-            chrome.tabs.sendMessage(this.currentTabId, { action: 'stopAutomation' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    this.addLog('⚠️ Không thể gửi lệnh dừng: ' + chrome.runtime.lastError.message, 'warning');
-                } else {
-                    this.addLog('✅ Lệnh dừng đã được gửi', 'success');
-                }
-                this.resetUI();
-            });
-        } else {
-            this.addLog('⚠️ Không có automation nào đang chạy', 'warning');
-            this.resetUI();
-        }
-    }
-    
-    showProgress() {
-        if (this.elements.ladipageProgress) {
-            this.elements.ladipageProgress.style.display = 'block';
-        }
-        
-        if (this.elements.ladipageSubmitBtn) {
-            this.elements.ladipageSubmitBtn.disabled = true;
-            this.elements.ladipageSubmitBtn.textContent = '🔄 Đang xử lý...';
-        }
-    }
-    
-    hideProgress() {
-        if (this.elements.ladipageProgress) {
-            this.elements.ladipageProgress.style.display = 'none';
-        }
-        
-        if (this.elements.ladipageSubmitBtn) {
-            this.elements.ladipageSubmitBtn.disabled = false;
-            this.elements.ladipageSubmitBtn.textContent = '🚀 Tạo DNS';
-        }
-    }
-    
     updateProgress(percent, message) {
-        if (this.elements.ladipageProgressFill) {
-            this.elements.ladipageProgressFill.style.width = percent + '%';
-        }
-        
-        if (this.elements.ladipageProgressText) {
-            this.elements.ladipageProgressText.textContent = message;
-        }
+        this.elements.ladipageProgressFill.style.width = `${percent}%`;
+        this.elements.ladipageProgressText.textContent = message;
     }
-    
-    resetUI() {
-        this.currentTabId = null;
-        this.isAutomationRunning = false;
-        this.hideProgress();
-        this.updateProgress(0, 'Sẵn sàng');
-    }
-    
     addLog(message, type = 'info') {
         const container = this.elements.ladipageContainer;
-        if (!container) return;
-        
-        const logEntry = document.createElement('div');
-        logEntry.className = `log-entry ${type}`;
-        logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-        
-        container.appendChild(logEntry);
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${['info', 'success', 'error', 'warning'].includes(type) ? type : 'info'}`;
+        entry.textContent = message;
+        container.append(entry);
+        while (container.children.length > 100) container.firstChild.remove();
         container.scrollTop = container.scrollHeight;
     }
-    
-    showError(message) {
-        this.addLog(`❌ ${message}`, 'error');
-    }
-    
-    clearLogs() {
-        if (this.elements.ladipageContainer) {
-            this.elements.ladipageContainer.innerHTML = '';
-        }
-    }
-    
-    isValidDomain(domain) {
-        // Basic domain validation
-        const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-_.]*[a-zA-Z0-9]$/;
-        return domainRegex.test(domain) && domain.includes('.');
-    }
-    
-    delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-    
-    // Handle messages from content script
-    handleMessage(message) {
-        if (message.action === 'updateProgress') {
-            this.updateProgress(message.percent, message.message);
-        } else if (message.action === 'addLog') {
-            this.addLog(message.message, message.type);
-        } else if (message.action === 'automationComplete') {
-            if (message.success) {
-                this.updateProgress(100, 'Hoàn thành!');
-                this.addLog('✅ DNS Automation Ladipage hoàn thành thành công!', 'success');
-                this.addLog('🌐 Domain đã được cấu hình trỏ về Ladipage', 'success');
-                
-                // Auto close progress after 3 seconds
-                setTimeout(() => {
-                    this.hideProgress();
-                }, 3000);
-                
-            } else if (message.stopped) {
-                this.updateProgress(0, 'Đã dừng');
-                this.addLog('⛔ Automation đã được dừng bởi người dùng', 'warning');
-                
-            } else {
-                this.updateProgress(0, 'Thất bại');
-                this.addLog('❌ DNS Automation thất bại', 'error');
-            }
-            
-            this.resetUI();
-        }
+    handleMessage(message, sender) {
+        if (sender.tab?.id !== this.currentTabId || message.jobId !== this.jobId || message.revision < this.revision) return;
+        this.revision = message.revision;
+        if (message.action === 'addLog') this.addLog(message.message, message.type);
+        if (message.action === 'updateProgress') this.updateProgress(message.percent, message.message);
+        if (message.action === 'automationComplete') this.restore(message.state);
     }
 }
-
-// Make it available globally
 window.LadipageHandler = LadipageHandler;

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Runsystem Tenten DNS Automation",
-  "version": "2.2.0",
-  "description": "Extension for Runsystem's Techsupport - WHOIS Lookup + IP/Domain Info + DNS Records Checker + Auto Ladipage DNS + IP Widget",
+  "version": "2.3.0",
+  "description": "WHOIS, IP, DNS lookup + Webcake/Ladipage/custom DNS import + on-demand IP widget",
   "permissions": [
     "activeTab",
     "storage",
@@ -14,9 +14,7 @@
     "https://whois.tenten.vn/*",
     "https://check-host.net/*",
     "https://dns.google/*",
-    "https://ipapi.co/*",
-    "https://ipinfo.io/*",
-    "http://ip-api.com/*"
+    "https://ipapi.co/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -30,14 +28,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://domain.tenten.vn/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://domain.tenten.vn/*"
+      ],
+      "js": [
+        "js/dns-config.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
-    },
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["ip-widget-content.js"],
-      "run_at": "document_end"
     }
   ],
   "background": {
@@ -45,8 +43,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["flags/*.png"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "flags/*.png"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "icons": {
@@ -54,5 +56,6 @@
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "minimum_chrome_version": "103"
 }

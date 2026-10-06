@@ -657,3 +657,25 @@ body.expanded {
         opacity: 1;
     }
 }
+
+/* Editable DNS imports */
+fieldset { border: 0; min-width: 0; }
+#dnsImportSettings > label { display: block; font-weight: 600; margin: 10px 0 6px; }
+#dnsPreset { width: 100%; padding: 9px; margin-bottom: 12px; }
+.import-note { font-size: 12px; line-height: 1.5; margin: 8px 0 12px; color: #495057; }
+.dns-edit-row { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 9px; margin-bottom: 8px; }
+.dns-row-top { display: flex; gap: 6px; margin-bottom: 6px; }
+.dns-edit-row input, .dns-edit-row select { min-width: 0; width: 100%; padding: 7px; border: 1px solid #ced4da; border-radius: 4px; }
+.dns-row-top select { flex: 0 0 86px; }
+.dns-extra-fields { display: flex; gap: 6px; }
+.dns-extra-fields label { font-size: 11px; flex: 1; min-width: 0; padding-top: 6px; }
+.template-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.template-actions button, .file-import, .remove-record { border: 1px solid #ced4da; border-radius: 4px; background: white; padding: 7px; cursor: pointer; font-size: 12px; }
+.file-import input { display: block; max-width: 200px; margin-top: 6px; }
+#ladipageDomainInput { width: 100%; }
+[hidden] { display: none !important; }
+button:disabled { cursor: not-allowed; opacity: .6; }
+/* Chrome extension popups have a maximum width of 800px. */
+body.expanded { width: 780px; max-width: 800px; }
+.right-panel { flex-basis: 360px; min-width: 360px; max-width: 360px; }
+.domain-input { min-width: 0; }

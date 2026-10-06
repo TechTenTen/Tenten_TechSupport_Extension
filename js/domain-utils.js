@@ -104,10 +104,10 @@ class DomainUtils {
         const cleanDomain = this.cleanDomainName(domain);
         
         try {
-            const response = await fetch(`https://${cleanDomain}`, {
+            const response = await boundedFetch(`https://${cleanDomain}`, {
                 method: 'HEAD',
                 mode: 'no-cors',
-                timeout: 5000
+                signal: AbortSignal.timeout(5000)
             });
             return true;
         } catch (error) {

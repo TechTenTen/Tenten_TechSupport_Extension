@@ -1,6 +1,6 @@
 {
   "name": "runsystem-tenten-dns-automation",
-  "version": "2.0.0",
+  "version": "2.3.0",
   "description": "Extension for Runsystem's Techsupport - WHOIS Lookup + IP/Domain Info + DNS Records Checker",
   "author": "Runsystem Techsupport Team",
   "license": "MIT",
@@ -21,7 +21,8 @@
   "scripts": {
     "build": "echo 'Extension ready for loading'",
     "dev": "echo 'Load extension in Chrome Developer Mode'",
-    "package": "echo 'Ready to package for Chrome Web Store'"
+    "package": "echo 'Ready to package for Chrome Web Store'",
+    "test": "node --test tests/*.test.js"
   },
   "devDependencies": {},
   "repository": {

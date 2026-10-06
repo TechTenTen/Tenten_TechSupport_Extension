@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "type": "A",
+      "name": "@",
+      "value": "113.20.119.17"
+    },
+    {
+      "type": "CNAME",
+      "name": "www",
+      "value": "dns.webcake.io"
+    }
+  ]
+}

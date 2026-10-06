@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=420, initial-scale=1.0">
     <title>Tenten DNS Automation</title>
     <link rel="stylesheet" href="popup.css">
-    <link rel="stylesheet" href="popup-fix.css">
 </head>
 <body>
     <div class="container">
@@ -75,6 +74,22 @@
                         </div>
                     </div>
 
+                    <div class="menu-item" id="autoWebcake">
+                        <div class="menu-item-content">
+                            <i class="icon">🍰</i><div class="menu-text">
+                                <div class="menu-title">Auto Webcake DNS</div>
+                                <div class="menu-desc">A @ + CNAME www cho Webcake</div>
+                            </div><div class="menu-status ready">READY</div>
+                        </div>
+                    </div>
+                    <div class="menu-item" id="openIpWidget">
+                        <div class="menu-item-content">
+                            <i class="icon">🌐</i><div class="menu-text">
+                                <div class="menu-title">Mở widget IP trên tab</div>
+                                <div class="menu-desc">Chỉ chạy khi bấm mở, tự dọn khi đóng</div>
+                            </div><div class="menu-status ready">READY</div>
+                        </div>
+                    </div>
                     <!-- Webhook Records (Coming Soon) -->
                     <div class="menu-item disabled" id="webhookRecords">
                         <div class="menu-item-content">
@@ -88,14 +103,14 @@
                     </div>
 
                     <!-- Custom Records (Coming Soon) -->
-                    <div class="menu-item disabled" id="customRecords">
+                    <div class="menu-item" id="customRecords">
                         <div class="menu-item-content">
                             <i class="icon">⚙️</i>
                             <div class="menu-text">
                                 <div class="menu-title">Custom Records</div>
-                                <div class="menu-desc">Tạo bản ghi tùy chỉnh</div>
+                                <div class="menu-desc">Sửa, lưu mẫu và nhập/xuất JSON</div>
                             </div>
-                            <div class="menu-status coming-soon">SOON</div>
+                            <div class="menu-status ready">READY</div>
                         </div>
                     </div>
 
@@ -117,7 +132,7 @@
 
 
                 <div class="footer">
-                    <div class="version">v2.2.0 - With IP Widget</div>
+                    <div class="version">v2.3.0 - DNS Import</div>
                     <div class="help">
                         <a href="#" id="helpLink">Hướng dẫn</a>
                     </div>
@@ -131,6 +146,13 @@
                     <button class="close-panel-btn" id="closePanelBtn">×</button>
                 </div>
                 <div class="right-panel-content" id="rightPanelContent">
+                    <div id="helpSection" class="help-section" style="display:none; padding:15px;">
+                        <p>WHOIS, IP/Domain Info và DNS Records: nhập tên miền rồi bấm Tra cứu.</p>
+                        <p>Import DNS: mở DNS Settings của đúng tên miền trên domain.tenten.vn. Chọn Webcake, Ladipage hoặc Custom Records, kiểm tra danh sách rồi bấm Import vào TENTEN.</p>
+                        <p>Lưu mẫu để dùng lại trong Custom Records; Nhập/Xuất JSON để chuyển cấu hình. Mỗi lượt tối đa 50 bản ghi. Mẫu gồm type, name, value; MX thêm priority, SRV thêm priority/weight/port, CAA thêm flag/tag.</p>
+                        <p>Có thể đóng popup khi import và mở lại để xem kết quả. Khi dừng/lỗi, kiểm tra các bản ghi trên TENTEN trước khi chạy lại. Bản ghi đã thêm không tự hoàn tác.</p>
+                        <p>Widget IP chỉ chạy khi bấm Mở widget IP trên tab. Nút × đóng widget; nút ↻ làm mới.</p>
+                    </div>
                     <!-- WHOIS Results -->
                     <div class="whois-section" id="whoisSection" style="display: none;">
                         <div class="domain-input-section">
@@ -186,23 +208,30 @@
 
                     <!-- Auto Ladipage DNS Section -->
                     <div class="ladipage-section" id="ladipageSection" style="display: none;">
-                        <div class="domain-input-section">
-                            <label for="ladipageDomainInput">Nhập tên miền để tự động tạo DNS Ladipage:</label>
-                            <div class="input-group">
-                                <input type="text" id="ladipageDomainInput" class="domain-input" placeholder="example.com" />
-                                <button id="ladipageSubmitBtn" class="submit-btn">🚀 Tạo DNS</button>
+                        <p class="import-note">Bản ghi sẽ được thêm vào tên miền đang mở trong <strong>DNS Settings TENTEN</strong>. Kiểm tra đúng tên miền trên tab và các bản ghi hiện có trước khi import. Extension chỉ thêm bản ghi; khi gặp lỗi sẽ dừng.</p>
+                        <fieldset id="dnsImportSettings">
+                            <label for="dnsPreset">Mẫu cấu hình</label>
+                            <select id="dnsPreset">
+                                <option value="webcake">Webcake — A @ và CNAME www</option>
+                                <option value="ladipage">Ladipage — tên miền chính</option>
+                                <option value="ladipage-sub">Ladipage — tên miền phụ</option>
+                                <option value="custom">Tùy chỉnh — mẫu đã lưu</option>
+                            </select>
+                            <div id="ladipageDomainSettings" hidden>
+                                <label for="ladipageDomainInput">Tên miền Ladipage (để điền REDIRECT / Name):</label>
+                                <input type="text" id="ladipageDomainInput" class="domain-input" placeholder="example.com hoặc sub.example.com">
+                                <p class="import-note">Ô này không chuyển tên miền trên TENTEN. Với tên miền phụ, Name mặc định là phần trước dấu chấm đầu tiên; sửa lại nếu zone DNS yêu cầu tên khác.</p>
                             </div>
-                            <div class="ladipage-type-selection">
-                                <label>
-                                    <input type="radio" name="ladipageType" value="domain" checked>
-                                    Tên miền chính (example.com)
-                                </label>
-                                <label>
-                                    <input type="radio" name="ladipageType" value="subdomain">
-                                    Tên miền phụ (sub.example.com)
-                                </label>
+                            <p class="import-note">Mỗi dòng: Type, Name, Value. MX/SRV/CAA có thêm thông số riêng. Có thể sửa mọi mẫu trước khi import.</p>
+                            <div id="dnsRecordEditor"></div>
+                            <div class="template-actions">
+                                <button type="button" id="addDnsRow">+ Thêm dòng</button>
+                                <button type="button" id="saveDnsTemplate">Lưu mẫu</button>
+                                <button type="button" id="exportDnsTemplate">Xuất JSON</button>
+                                <label class="file-import">Nhập JSON<input type="file" id="importDnsFile" accept=".json,application/json"></label>
                             </div>
-                        </div>
+                        </fieldset>
+                        <button id="ladipageSubmitBtn" class="submit-btn">Import vào TENTEN</button>
                         <div class="ladipage-progress" id="ladipageProgress" style="display: none;">
                             <div class="progress-bar">
                                 <div class="progress-fill" id="ladipageProgressFill"></div>
@@ -220,6 +249,8 @@
     </div>
 
     <!-- Load modular JavaScript files -->
+    <script src="js/network-utils.js"></script>
+    <script src="js/dns-config.js"></script>
     <script src="js/domain-utils.js"></script>
     <script src="js/ui-manager.js"></script>
     <script src="js/whois-handler.js"></script>

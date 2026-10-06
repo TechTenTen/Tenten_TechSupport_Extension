@@ -10,40 +10,26 @@ class IpInfoHandler {
     async handleLookup(domain = null) {
         // Get domain from parameter or from input (for backward compatibility)
         const targetHost = domain || (this.elements.ipinfoDomainInput ? this.elements.ipinfoDomainInput.value.trim() : '');
-        
-        console.log('=== IP Info Handler Called ===');
-        console.log('Target host:', targetHost);
-        console.log('Elements available:', {
-            ipInfoContainer: !!this.elements.ipInfoContainer,
-            rightPanel: !!this.elements.rightPanel
-        });
-        
+
         if (!targetHost) {
             this.showError('Vui lòng nhập tên miền hoặc IP');
             return;
         }
 
         if (this.isLoading) {
-            console.log('IP Info lookup already in progress');
+            
             return;
         }
 
-        console.log('=== IP Info Lookup Started ===');
-        console.log('Host:', targetHost);
-
         // No need to show right panel - it's already shown
         // Just update the container with loading state
-        console.log('Setting loading state...');
-
-        console.log('=== IP Info Lookup Started ===');
-        console.log('Host:', targetHost);
 
         // Show right panel with IP Info title
-        console.log('Showing right panel...');
+        
         window.uiManager.showRightPanel('🌍 Thông tin IP/Domain', 'ipinfo');
 
         // Hiển thị loading state
-        console.log('Setting loading state...');
+        
         this.elements.ipInfoContainer.innerHTML = '<div class="ipinfo-loading">🌍 Đang tra cứu thông tin IP/Domain...</div>';
         
         // Set loading state
@@ -52,17 +38,13 @@ class IpInfoHandler {
         try {
             // Clean domain name
             const cleanHost = this.cleanHostName(targetHost);
-            console.log('Clean host:', cleanHost);
-            
+
             // Call background script for IP Info
-            console.log('Sending IP Info message to background script...');
+            
             const response = await this.sendMessage({ action: 'ipInfo', host: cleanHost });
-            
-            console.log('=== IP Info Response Received ===');
-            console.log('Response:', response);
-            
+
             if (response && response.success) {
-                console.log('IP Info success, displaying data...');
+                
                 this.displayIpInfo(response.data, response.warning, response.source);
             } else {
                 console.error('IP Info API error:', response);

@@ -1,11 +1,10 @@
+importScripts('js/network-utils.js', 'js/dns-config.js', 'js/widget-service.js');
 // Background script - Service worker cho Chrome Extension
-console.log('Tenten DNS Automation background script loaded');
 
 // Xử lý installation
 chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
-        console.log('Extension installed');
-        
+
         // Mở trang hướng dẫn hoặc welcome page
         chrome.tabs.create({
             url: 'https://domain.tenten.vn'
@@ -15,49 +14,41 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 // Xử lý messages từ content script và popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('=== Background received message ===');
-    console.log('Message:', message);
-    console.log('Sender:', sender);
-    console.log('=====================================');
-    
+
     if (message.action === 'whoisLookup') {
-        console.log('Handling WHOIS lookup for domain:', message.domain);
+        
         handleWhoisLookup(message.domain, sendResponse);
         return true; // Keep connection open for async response
     }
     
     if (message.action === 'ipInfo') {
-        console.log('Handling IP Info lookup for host:', message.host);
+        
         handleIpInfo(message.host, sendResponse);
         return true; // Keep connection open for async response
     }
     
     if (message.action === 'dnsLookup') {
-        console.log('Handling DNS lookup for domain:', message.domain, 'type:', message.recordType);
+        
         handleDnsLookup(message.domain, message.recordType, sendResponse);
         return true; // Keep connection open for async response
     }
     
-    console.log('Unknown action:', message.action);
-    
-    // Luôn return true để giữ kết nối mở
-    return true;
-});
-
-// Xử lý click vào extension icon
-chrome.action.onClicked.addListener((tab) => {
-    // Popup sẽ mở tự động, không cần xử lý gì thêm
-    console.log('Extension icon clicked');
+    if (message.action === 'widgetIpInfo') {
+        widgetIpInfo(message.host, message.refresh === true).then(
+            data => sendResponse({ success: true, data }),
+            error => sendResponse({ success: false, error: error.message })
+        );
+        return true;
+    }
+    return false;
 });
 
 async function handleWhoisLookup(domain, sendResponse) {
     try {
-        console.log('Fetching WHOIS for:', domain);
-        
+
         // Step 1: Get homepage to extract CSRF token and cookies FIRST
-        console.log('Step 1: Getting CSRF token and session from Tenten homepage...');
-        
-        const homepageResponse = await fetch('https://whois.tenten.vn/', {
+
+        const homepageResponse = await boundedFetch('https://whois.tenten.vn/', {
             method: 'GET',
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -93,15 +84,11 @@ async function handleWhoisLookup(domain, sendResponse) {
                 allCookies.push(cookiePart);
             }
         }
-        
-        console.log('Extracted cookies:', allCookies);
-        
+
         // Extract CSRF token from HTML
         const htmlText = await homepageResponse.text();
         let csrfToken = '';
-        
-        console.log('HTML preview:', htmlText.substring(0, 500));
-        
+
         // Try multiple patterns to find CSRF token
         const patterns = [
             /<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i,
@@ -117,7 +104,7 @@ async function handleWhoisLookup(domain, sendResponse) {
             const match = htmlText.match(pattern);
             if (match && match[1]) {
                 csrfToken = match[1];
-                console.log('Found CSRF token with pattern:', pattern.source);
+                
                 break;
             }
         }
@@ -134,22 +121,19 @@ async function handleWhoisLookup(domain, sendResponse) {
                         const tokenData = JSON.parse(atob(decodedToken));
                         if (tokenData && tokenData.value) {
                             csrfToken = tokenData.value;
-                            console.log('Extracted CSRF token from XSRF-TOKEN cookie');
+                            
                         }
                     } catch (e) {
-                        console.log('Failed to decode XSRF-TOKEN, trying raw value:', e);
+                        
                         // Try using the raw token value
                         csrfToken = decodeURIComponent(tokenValue);
                     }
                 }
             }
         }
-        
-        console.log('CSRF token found:', csrfToken ? `Yes (${csrfToken.substring(0, 20)}...)` : 'No');
-        
+
         // Step 2: Make WHOIS request with CSRF token and session cookies
-        console.log('Step 2: Making WHOIS request with full session...');
-        
+
         const whoisHeaders = {
             'Accept': 'application/json, text/html, */*',
             'Accept-Encoding': 'gzip, deflate, br, zstd',
@@ -176,40 +160,29 @@ async function handleWhoisLookup(domain, sendResponse) {
         if (allCookies.length > 0) {
             whoisHeaders['Cookie'] = allCookies.join('; ');
         }
-        
-        console.log('Request headers:', Object.keys(whoisHeaders));
-        console.log('CSRF token being sent:', csrfToken ? csrfToken.substring(0, 30) + '...' : 'None');
-        console.log('Cookies being sent:', allCookies.length, 'cookies');
-        
-        const tentenResponse = await fetch('https://whois.tenten.vn/home/check-domain', {
+
+        const tentenResponse = await boundedFetch('https://whois.tenten.vn/home/check-domain', {
             method: 'POST',
             headers: whoisHeaders,
             body: `domain=${encodeURIComponent(domain)}`
         });
-        
-        console.log('Tenten API response status:', tentenResponse.status);
-        console.log('Response headers:', [...tentenResponse.headers.entries()]);
-        
+
         if (tentenResponse.ok) {
             const contentType = tentenResponse.headers.get('content-type') || '';
-            console.log('Response content-type:', contentType);
-            
+
             const responseText = await tentenResponse.text();
-            console.log('Response length:', responseText.length);
-            console.log('Response preview:', responseText.substring(0, 300));
-            
+
             // Try to parse as JSON first
             try {
                 const jsonData = JSON.parse(responseText);
-                console.log('Tenten JSON response:', jsonData);
-                
+
                 if (jsonData && (jsonData.whois_info || jsonData.success || jsonData.data || jsonData.domain_name)) {
                     const normalizedData = normalizeTentenData(jsonData);
                     sendResponse({ success: true, data: normalizedData, source: 'Tenten API' });
                     return;
                 }
             } catch (jsonError) {
-                console.log('Not JSON, trying to parse as HTML...');
+                
             }
             
             // Parse as HTML if JSON parsing fails
@@ -225,8 +198,7 @@ async function handleWhoisLookup(domain, sendResponse) {
         } else {
             // Get error details
             const errorText = await tentenResponse.text();
-            console.log('Error response body:', errorText.substring(0, 500));
-            
+
             if (tentenResponse.status === 419) {
                 throw new Error('CSRF token mismatch - API Tenten yêu cầu xác thực session phức tạp hơn');
             } else {
@@ -266,8 +238,7 @@ async function handleWhoisLookup(domain, sendResponse) {
 
 function normalizeTentenData(data) {
     // Handle Tenten API response format
-    console.log('Normalizing Tenten data:', data);
-    
+
     // Check if it's the expected format with whois_info
     if (data.whois_info) {
         const whoisInfo = data.whois_info;
@@ -304,18 +275,16 @@ function normalizeTentenData(data) {
 }
 
 function parseTentenHTML(htmlData, domain) {
-    console.log('Parsing Tenten HTML response...');
-    console.log('HTML preview (first 500 chars):', htmlData.substring(0, 500));
-    
+
     // Debug: Print specific sections
     const statusSection = htmlData.match(/Cờ trạng thái[\s\S]{0,200}/i);
     if (statusSection) {
-        console.log('Status section found:', statusSection[0]);
+        
     }
     
     const nsSection = htmlData.match(/Nameservers[\s\S]{0,200}/i);
     if (nsSection) {
-        console.log('Nameservers section found:', nsSection[0]);
+        
     }
     
     const result = {
@@ -333,7 +302,7 @@ function parseTentenHTML(htmlData, domain) {
                        htmlData.match(/Thông tin WHOIS tên miền[^>]*<strong[^>]*>([^<]+)<\/strong>/i);
     if (domainMatch) {
         result.domainName = (domainMatch[2] || domainMatch[1]).trim();
-        console.log('Domain name extracted:', result.domainName);
+        
     }
     
     // Specific patterns based on the real HTML structure you provided
@@ -343,35 +312,35 @@ function parseTentenHTML(htmlData, domain) {
     const regDateMatch = htmlData.match(/<td[^>]*>Ngày đăng ký\s*:\s*<\/td>\s*<td[^>]*>([^<]+)<\/td>/i);
     if (regDateMatch && regDateMatch[1]) {
         result.creationDate = regDateMatch[1].trim();
-        console.log('Registration date found:', result.creationDate);
+        
     }
     
     // Expiration date - can be wrapped in <strong>
     const expDateMatch = htmlData.match(/<td[^>]*>Ngày hết hạn\s*:\s*<\/td>\s*<td[^>]*>(?:<strong[^>]*>)?([^<]+)(?:<\/strong>)?<\/td>/i);
     if (expDateMatch && expDateMatch[1]) {
         result.expirationDate = expDateMatch[1].trim();
-        console.log('Expiration date found:', result.expirationDate);
+        
     }
     
     // Registrant name
     const registrantMatch = htmlData.match(/<td[^>]*>Chủ sở hữu tên miền\s*:\s*<\/td>\s*<td[^>]*>([^<]+)<\/td>/i);
     if (registrantMatch && registrantMatch[1]) {
         result.registrantName = registrantMatch[1].trim();
-        console.log('Registrant found:', result.registrantName);
+        
     }
     
     // Registrar
     const registrarMatch = htmlData.match(/<td[^>]*>Quản lý tại Nhà đăng ký\s*:\s*<\/td>\s*<td[^>]*>([^<]+)<\/td>/i);
     if (registrarMatch && registrarMatch[1]) {
         result.registrarName = registrarMatch[1].trim();
-        console.log('Registrar found:', result.registrarName);
+        
     }
     
     // Status flags - extract from ul/li structure
     // Pattern: <td><span>Cờ trạng thái ...:</span></td><td><ul><li>clientTransferProhibited</li></ul></td>
     const statusMatch = htmlData.match(/<td[^>]*><span[^>]*>Cờ trạng thái[^<]*<\/span>\s*<\/td>\s*<td[^>]*><ul>([\s\S]*?)<\/ul><\/td>/i);
     if (statusMatch && statusMatch[1]) {
-        console.log('Status section found:', statusMatch[1]);
+        
         const statusItems = statusMatch[1].match(/<li[^>]*>([^<]+)<\/li>/gi);
         if (statusItems && statusItems.length > 0) {
             const statuses = statusItems.map(item => {
@@ -381,20 +350,20 @@ function parseTentenHTML(htmlData, domain) {
             
             if (statuses.length > 0) {
                 result.status = statuses.join(', ');
-                console.log('Status found:', result.status);
+                
             }
         }
     } else {
         // Try broader pattern
         const altStatusMatch = htmlData.match(/Cờ trạng thái[\s\S]*?<ul>([\s\S]*?)<\/ul>/i);
         if (altStatusMatch && altStatusMatch[1]) {
-            console.log('Status (fallback) section found:', altStatusMatch[1]);
+            
             const statusItems = altStatusMatch[1].match(/<li[^>]*>([^<]+)<\/li>/gi);
             if (statusItems && statusItems.length > 0) {
                 const statuses = statusItems.map(item => item.replace(/<[^>]*>/g, '').trim()).filter(status => status);
                 if (statuses.length > 0) {
                     result.status = statuses.join(', ');
-                    console.log('Status (fallback) found:', result.status);
+                    
                 }
             }
         }
@@ -404,7 +373,7 @@ function parseTentenHTML(htmlData, domain) {
     // Pattern: <td><span>Nameservers ...:</span></td><td><ul><li>rayne.ns.cloudflare.com</li><li>zac.ns.cloudflare.com</li></ul></td>
     const nsMatch = htmlData.match(/<td[^>]*><span[^>]*>Nameservers[^<]*<\/span><\/td>\s*<td[^>]*><ul>([\s\S]*?)<\/ul><\/td>/i);
     if (nsMatch && nsMatch[1]) {
-        console.log('Nameservers section found:', nsMatch[1]);
+        
         const nsItems = nsMatch[1].match(/<li[^>]*>([^<]+)<\/li>/gi);
         if (nsItems && nsItems.length > 0) {
             const nameServers = nsItems.map(item => {
@@ -414,20 +383,20 @@ function parseTentenHTML(htmlData, domain) {
             
             if (nameServers.length > 0) {
                 result.nameServers = nameServers.join(', ');
-                console.log('Nameservers found:', result.nameServers);
+                
             }
         }
     } else {
         // Try broader pattern
         const altNsMatch = htmlData.match(/Nameservers[\s\S]*?<ul>([\s\S]*?)<\/ul>/i);
         if (altNsMatch && altNsMatch[1]) {
-            console.log('Nameservers (fallback) section found:', altNsMatch[1]);
+            
             const nsItems = altNsMatch[1].match(/<li[^>]*>([^<]+)<\/li>/gi);
             if (nsItems && nsItems.length > 0) {
                 const nameServers = nsItems.map(item => item.replace(/<[^>]*>/g, '').trim()).filter(ns => ns);
                 if (nameServers.length > 0) {
                     result.nameServers = nameServers.join(', ');
-                    console.log('Nameservers (fallback) found:', result.nameServers);
+                    
                 }
             }
         }
@@ -439,7 +408,7 @@ function parseTentenHTML(htmlData, domain) {
         const altRegDate = htmlData.match(/Ngày đăng ký[:\s]*([^\n\r<]+)/i);
         if (altRegDate && altRegDate[1]) {
             result.creationDate = altRegDate[1].trim();
-            console.log('Registration date (fallback):', result.creationDate);
+            
         }
     }
     
@@ -448,22 +417,19 @@ function parseTentenHTML(htmlData, domain) {
         const altExpDate = htmlData.match(/Ngày hết hạn[:\s]*([^\n\r<]+)/i);
         if (altExpDate && altExpDate[1]) {
             result.expirationDate = altExpDate[1].trim();
-            console.log('Expiration date (fallback):', result.expirationDate);
+            
         }
     }
-    
-    console.log('Final parsed result:', result);
+
     return result;
 }
 
 async function handleIpInfo(host, sendResponse) {
     try {
-        console.log('Fetching IP Info for:', host);
-        
+
         // Step 1: Get CSRF token from check-host.net homepage
-        console.log('Step 1: Getting CSRF token from check-host.net...');
-        
-        const homepageResponse = await fetch('https://check-host.net/ip-info', {
+
+        const homepageResponse = await boundedFetch('https://check-host.net/ip-info', {
             method: 'GET',
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -492,15 +458,14 @@ async function handleIpInfo(host, sendResponse) {
         const csrfMatch = htmlText.match(/name="csrf_token"\s+value="([^"]+)"/i);
         if (csrfMatch && csrfMatch[1]) {
             csrfToken = csrfMatch[1];
-            console.log('Found CSRF token:', csrfToken.substring(0, 20) + '...');
+            
         } else {
             throw new Error('Could not find CSRF token');
         }
         
         // Step 2: Make IP info request
-        console.log('Step 2: Making IP info request...');
-        
-        const ipInfoResponse = await fetch(`https://check-host.net/ip-info?host=${encodeURIComponent(host)}&csrf_token=${encodeURIComponent(csrfToken)}`, {
+
+        const ipInfoResponse = await boundedFetch(`https://check-host.net/ip-info?host=${encodeURIComponent(host)}&csrf_token=${encodeURIComponent(csrfToken)}`, {
             method: 'GET',
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -515,13 +480,10 @@ async function handleIpInfo(host, sendResponse) {
                 'Sec-Fetch-Site': 'same-origin'
             }
         });
-        
-        console.log('IP Info API response status:', ipInfoResponse.status);
-        
+
         if (ipInfoResponse.ok) {
             const responseText = await ipInfoResponse.text();
-            console.log('Response length:', responseText.length);
-            
+
             // Parse HTML response to extract IP info
             const parsedData = parseCheckHostHTML(responseText, host);
             sendResponse({ success: true, data: parsedData, source: 'Check-Host.net' });
@@ -559,8 +521,7 @@ async function handleIpInfo(host, sendResponse) {
 }
 
 function parseCheckHostHTML(htmlData, host) {
-    console.log('Parsing Check-Host HTML response...');
-    
+
     const result = {
         host: host,
         ipAddress: 'N/A',
@@ -578,9 +539,7 @@ function parseCheckHostHTML(htmlData, host) {
     
     // Extract multiple IP info sections and combine data
     const ipInfoSections = htmlData.match(/<div class="ipinfo-item[^>]*"[^>]*>([\s\S]*?)<\/div>\s*<script/gi) || [];
-    
-    console.log(`Found ${ipInfoSections.length} IP info sections`);
-    
+
     // Data from all sources to find most common values
     const allData = {
         ipAddress: [],
@@ -650,22 +609,17 @@ function parseCheckHostHTML(htmlData, host) {
             }
         }
     }
-    
-    console.log('Parsed IP info result:', result);
+
     return result;
 }
 
 async function handleDnsLookup(domain, recordType, sendResponse) {
     try {
-        console.log('=== DNS Lookup Started ===');
-        console.log('Domain:', domain);
-        console.log('Record Type:', recordType);
-        
+
         // Use Google DNS-over-HTTPS API
         const dnsApiUrl = `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${recordType}`;
-        console.log('DNS API URL:', dnsApiUrl);
-        
-        const response = await fetch(dnsApiUrl, {
+
+        const response = await boundedFetch(dnsApiUrl, {
             method: 'GET',
             headers: {
                 'Accept': 'application/dns-json',
@@ -678,7 +632,6 @@ async function handleDnsLookup(domain, recordType, sendResponse) {
         }
 
         const data = await response.json();
-        console.log('DNS API Response:', data);
 
         // Parse DNS response
         const records = [];
@@ -693,8 +646,6 @@ async function handleDnsLookup(domain, recordType, sendResponse) {
                 }
             });
         }
-
-        console.log('Parsed DNS records:', records);
 
         sendResponse({
             success: true,
